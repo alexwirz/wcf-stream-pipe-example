@@ -1,22 +1,39 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.ServiceModel;
 using System.Threading.Tasks;
 using contract;
-using System;
-using SharpCompress.Reader;
 using SharpCompress.Common;
+using SharpCompress.Reader;
 
 namespace stream_forwarder
 {
     public class StreamForwarder : Streaming
     {
+        private void TestBinaryReader(Stream stream)
+        {
+            BinaryReader br = new BinaryReader(stream);
+            while (stream.CanRead)
+            {
+                try
+                {
+                    var int16 = br.ReadInt16();
+                    Console.WriteLine("still reading...");
+                }
+                catch (EndOfStreamException endOfStreamException)
+                {
+                    Console.WriteLine("eos!!!");
+                }
+            }
+        }
+
         public void ReceiveStream(System.IO.Stream stream)
         {
             System.Console.WriteLine("begining forwarding the stream...");
-
             var netPipe = new PipeStream();
             var forwardingTask = Task.Factory.StartNew(() => ForwardStream(netPipe));
 
+            Directory.CreateDirectory("forwarder");
             var outputFileStream = File.OpenWrite(@"forwarder\cached-archive.rar");
             var teeCache = new TeeOutputStream(outputFileStream, netPipe);
 
@@ -48,7 +65,10 @@ namespace stream_forwarder
 
         private void DecopmressStream(Stream stream)
         {
-            var reader = ReaderFactory.Open(stream);
+
+            var decompressPipe = new PipeStream();
+            var sourceStreamReadingTask = Task.Factory.StartNew(() => stream.CopyTo(decompressPipe));
+            var reader = ReaderFactory.Open(decompressPipe);
             while (reader.MoveToNextEntry())
             {
                 if (!reader.Entry.IsDirectory)
@@ -57,6 +77,7 @@ namespace stream_forwarder
                     reader.WriteEntryToDirectory(@"forwarder", ExtractOptions.ExtractFullPath | ExtractOptions.Overwrite);
                 }
             }
+            sourceStreamReadingTask.Wait();
         }
     }
 }
